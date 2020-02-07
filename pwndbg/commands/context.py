@@ -512,17 +512,16 @@ class customContext:
        
         try:
             self.someFunction()
-            sys.stdout.seek(0)
-            for line in sys.stdout:
-                result.append(line)
-
-            sys.stdout.close()
-            os.remove(self.someFunction.__name__)
         except Exception as e:
             print("There was an error running function " + self.someFunction.__name__)
             print("exception: " + str(e))
             print(traceback.format_exc())
+        
+        sys.stdout.seek(0)
+        for line in sys.stdout:
+            result.append(line)
 
+        sys.stdout.close()
 
         return result
 
