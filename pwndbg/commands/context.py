@@ -11,6 +11,10 @@ import codecs
 import ctypes
 import sys
 from io import open
+import os
+import traceback
+
+
 
 import gdb
 
@@ -48,6 +52,32 @@ config_output = pwndbg.config.Parameter('context-output', 'stdout', 'where pwndb
 config_context_sections = pwndbg.config.Parameter('context-sections',
                                                   'regs disasm code stack backtrace',
                                                   'which context sections are displayed (controls order)')
+custom_output_functions = {}
+
+config_custom_context = pwndbg.config.Parameter("context-custom","","add custom-context python code for output")
+
+
+
+
+@pwndbg.config.Trigger([config_custom_context])
+def validate_context_custom():
+    if "user_custom" not in config_context_sections.value:
+        print("No custom function define. Please add a custom output function by using pwndbg.commands.context.addCustomOutput(function)")
+        return
+
+    valid_values = [function for function in custom_output_functions]
+
+    if not config_custom_context.value or config_custom_context.value.lower() in ('none', 'empty'):
+        config_custom_context.value = ''
+        print(message.warn("Sections set to be empty. FYI defined custom outputs are: %s" % ', '.join(valid_values)))
+        return
+
+    for function in config_custom_context.split():
+        if function not in valid_values:
+            print(message.warn("Invalid function: %s, valid values: %s" % (function, ', '.join(valid_values))))
+            print(message.warn("(setting none of them like '' will make sections not appear)"))
+            config_context_sections.revert_default()
+            return
 
 
 @pwndbg.config.Trigger([config_context_sections])
@@ -409,13 +439,24 @@ def context_signal():
     return last_signal
 
 
+def context_user_custom():
+    result = []
+    for function in config_custom_context.split():
+        with customContext(custom_output_functions[function]) as output:
+            result.append(pwndbg.ui.banner(function))
+            result.extend(output)
+    return result
+
+
+
 context_sections = {
     'r': context_regs,
     'd': context_disasm,
     'a': context_args,
     'c': context_code,
     's': context_stack,
-    'b': context_backtrace
+    'b': context_backtrace,
+    'u': context_user_custom
 }
 
 
@@ -431,3 +472,59 @@ def _is_rr_present():
     interpreter_globals = ast.literal_eval(globals_list_literal_str)
 
     return 'RRCmd' in interpreter_globals and 'RRWhere' in interpreter_globals
+
+
+
+def addCustomOutput(function):
+    ## can add as many number of custom outputs. shouldn't restrict it. 
+
+    global custom_output_functions
+    if function.__name__ in custom_output_functions:
+        print(message.error("there is already a custom output with the name %s" % function.__name__))
+        return
+
+    custom_output_functions[function.__name__] = function
+    config_custom_context.value = config_custom_context.value + " %s" % function.__name__ 
+    print("added " + function.__name__)
+   
+    if "user_custom" not in config_context_sections.value: 
+        config_context_sections.value = config_context_sections.value + " user_custom" 
+
+def reset():
+    global custom_output_functions, config_context_sections, config_custom_context
+    custom_output_functions = {}
+    config_custom_context.value = ""
+    if "user_custom" in config_context_sections.value:
+        temp_context_sections = config_context_sections.value.split()
+        temp_context_sections.remove("user_custom")
+        config_context_sections.value = " ".join(temp_context_sections)
+
+
+
+class customContext:
+    def __init__(self, someFunction):
+        self.someFunction = someFunction
+
+    def __enter__(self):
+        result = []
+        self.old_output = sys.stdout
+        sys.stdout = open(self.someFunction.__name__, 'w+')
+       
+        try:
+            self.someFunction()
+            sys.stdout.seek(0)
+            for line in sys.stdout:
+                result.append(line)
+
+            sys.stdout.close()
+            os.remove(self.someFunction.__name__)
+        except Exception as e:
+            print("There was an error running function " + self.someFunction.__name__)
+            print("exception: " + str(e))
+            print(traceback.format_exc())
+
+
+        return result
+
+    def __exit__(self,type, value, traceback):
+        sys.stdout = self.old_output
