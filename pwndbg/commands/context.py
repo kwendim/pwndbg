@@ -13,6 +13,7 @@ import sys
 from io import open
 import os
 import traceback
+import tempfile
 
 
 
@@ -508,7 +509,11 @@ class customContext:
     def __enter__(self):
         result = []
         self.old_output = sys.stdout
-        sys.stdout = open(self.someFunction.__name__, 'w+')
+        tempdir = tempfile.gettempdir() + '/pwndbg'
+        if not os.path.exists(tempdir):
+            os.mkdir(tempdir)
+
+        sys.stdout = open(os.path.join(tempdir, self.someFunction.__name__), 'w+')
        
         try:
             self.someFunction()
@@ -522,6 +527,7 @@ class customContext:
             result.append(line)
 
         sys.stdout.close()
+        os.remove(os.path.join(tempdir, self.someFunction.__name__))
 
         return result
 
