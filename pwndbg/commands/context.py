@@ -491,7 +491,7 @@ def addCustomOutput(function):
     if "user_custom" not in config_context_sections.value: 
         config_context_sections.value = config_context_sections.value + " user_custom" 
 
-def reset():
+def resetCustom():
     global custom_output_functions, config_context_sections, config_custom_context
     custom_output_functions = {}
     config_custom_context.value = ""
